@@ -1,0 +1,21 @@
+{
+  "name": "whatsapp-chatbot-web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "setup": "npm install --no-audit --no-fund && npm start"
+  },
+  "dependencies": {
+    "moment-timezone": "^0.5.45",
+    "openai": "^4.78.1",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "1.33.2",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "qrcode": "^1.5.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "@supabase/supabase-js": "^2.45.3"
+  }
+}

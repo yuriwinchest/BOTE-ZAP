@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Bot - Dashboard</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 28px;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .nav-links a {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        
+        .nav-links a:hover {
+            background: #5a6fd6;
+        }
+        
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.connected {
+            background: #4caf50;
+        }
+        
+        .status-indicator.disconnected {
+            background: #f44336;
+        }
+        
+        .status-indicator.connecting {
+            background: #ff9800;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .status-text {
+            font-size: 18px;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        .qrcode-container {
+            text-align: center;
+            padding: 30px;
+            background: #fafafa;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .qrcode-container.hidden {
+            display: none;
+        }
+        
+        #qrcode {
+            max-width: 300px;
+            width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .instructions {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .instructions h3 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+            color: #333;
+        }
+        
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        
+        .not-started {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .not-started h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .not-started p {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .not-started .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        
+        .not-started .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 WhatsApp Bot</h1>
+            <div class="nav-links">
+                <a href="/admin">⚙️ Admin</a>
+            </div>
+        </div>
+        
+        <!-- Seção quando bot não está iniciado -->
+        <div class="not-started" id="notStarted">
+            <h2>⚠️ Bot não iniciado</h2>
+            <p>O bot precisa ser configurado e iniciado antes de usar.</p>
+            <a href="/admin" class="btn">⚙️ Ir para Administração</a>
+        </div>
+        
+        <!-- Seção quando bot está ativo -->
+        <div id="botActive" class="hidden">
+            <div class="status-card">
+                <span class="status-indicator disconnected" id="statusIndicator"></span>
+                <span class="status-text" id="statusText">Conectando...</span>
+            </div>
+            
+            <div class="qrcode-container hidden" id="qrcodeContainer">
+                <h2 style="margin-bottom: 20px; color: #333;">📱 Escaneie o QR Code</h2>
+                <img id="qrcode" alt="QR Code WhatsApp" />
+                <div class="instructions">
+                    <h3>📋 Como conectar:</h3>
+                    <ol>
+                        <li>Abra o WhatsApp no seu celular</li>
+                        <li>Vá em <strong>Configurações > Aparelhos conectados</strong></li>
+                        <li>Toque em <strong>"Conectar um aparelho"</strong></li>
+                        <li>Escaneie o QR Code acima</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <div class="connected-info hidden" id="connectedInfo" style="text-align: center; padding: 40px;">
+                <h2 style="color: #4caf50; margin-bottom: 20px;">✅ WhatsApp Conectado!</h2>
+                <p style="color: #666;">O bot está funcionando e respondendo mensagens automaticamente.</p>
+                <p style="margin-top: 20px;">
+                    <a href="/admin" style="color: #667eea;">⚙️ Ir para configurações</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        
+        const notStarted = document.getElementById('notStarted');
+        const botActive = document.getElementById('botActive');
+        const qrcodeContainer = document.getElementById('qrcodeContainer');
+        const connectedInfo = document.getElementById('connectedInfo');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        
+        // Receber status inicial
+        socket.on('status', (data) => {
+            console.log('Status recebido:', data);
+            
+            if (data.botStarted) {
+                notStarted.classList.add('hidden');
+                botActive.classList.remove('hidden');
+                
+                if (data.connected) {
+                    showConnected();
+                } else if (data.qrCode) {
+                    showQRCode(data.qrCode);
+                } else {
+                    updateStatus('connecting', 'Aguardando QR Code...');
+                }
+            } else {
+                notStarted.classList.remove('hidden');
+                botActive.classList.add('hidden');
+            }
+        });
+        
+        socket.on('bot_started', () => {
+            notStarted.classList.add('hidden');
+            botActive.classList.remove('hidden');
+            updateStatus('connecting', 'Iniciando...');
+        });
+        
+        socket.on('bot_stopped', () => {
+            notStarted.classList.remove('hidden');
+            botActive.classList.add('hidden');
+        });
+        
+        socket.on('qr', (qrCodeImage) => {
+            showQRCode(qrCodeImage);
+        });
+        
+        socket.on('connected', () => {
+            showConnected();
+        });
+        
+        socket.on('disconnected', () => {
+            connectedInfo.classList.add('hidden');
+            qrcodeContainer.classList.remove('hidden');
+            updateStatus('disconnected', 'Desconectado');
+        });
+        
+        function showQRCode(qrCodeImage) {
+            document.getElementById('qrcode').src = qrCodeImage;
+            qrcodeContainer.classList.remove('hidden');
+            connectedInfo.classList.add('hidden');
+            updateStatus('connecting', 'Aguardando conexão...');
+        }
+        
+        function showConnected() {
+            qrcodeContainer.classList.add('hidden');
+            connectedInfo.classList.remove('hidden');
+            updateStatus('connected', '✅ WhatsApp Conectado!');
+        }
+        
+        function updateStatus(status, text) {
+            statusIndicator.className = 'status-indicator ' + status;
+            statusText.textContent = text;
+        }
+    </script>
+</body>
+</html>

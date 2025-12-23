@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administração - WhatsApp Bot</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+        }
+        
+        h1 {
+            font-size: 24px;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .nav-links a {
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            transition: all 0.3s;
+        }
+        
+        .nav-links a:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .nav-links a.active {
+            background: #667eea;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        
+        .card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-box {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 20px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .status-indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.online { background: #4caf50; }
+        .status-indicator.offline { background: #f44336; }
+        .status-indicator.waiting { background: #ff9800; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+            50% { opacity: 0.7; box-shadow: 0 0 10px 5px currentColor; }
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+            color: white;
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: rgba(255,255,255,0.8);
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            background: rgba(0,0,0,0.2);
+            color: #fff;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .qrcode-section {
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .qrcode-section img {
+            max-width: 250px;
+            border-radius: 12px;
+            background: white;
+            padding: 15px;
+        }
+        
+        .qrcode-section.hidden {
+            display: none;
+        }
+        
+        .response-item {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 15px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .response-item input {
+            flex: 1;
+        }
+        
+        .response-item .delete-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .alert.success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid #4caf50;
+            color: #4caf50;
+        }
+        
+        .alert.error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid #f44336;
+            color: #f44336;
+        }
+        
+        .alert.show {
+            display: block;
+        }
+        
+        .instructions {
+            background: rgba(33, 150, 243, 0.1);
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+        
+        .instructions li {
+            margin-bottom: 5px;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .setting-row:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚙️ Painel Administrativo</h1>
+            <div class="nav-links">
+                <a href="/admin" class="active">Admin</a>
+                <a href="/">Dashboard</a>
+                <a href="/login">Login</a>
+            </div>
+        </div>
+        
+        <div id="alertBox" class="alert"></div>
+        
+        <div class="grid">
+            <!-- Status do Bot -->
+            <div class="card">
+                <h2>📊 Status do Bot</h2>
+                <div class="status-box">
+                    <div class="status-indicator offline" id="statusIndicator"></div>
+                    <div>
+                        <strong id="statusText">Desconectado</strong>
+                        <p style="font-size: 12px; opacity: 0.7;" id="statusDetail">Bot não iniciado</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-success" id="btnStart" onclick="startBot()">
+                        ▶️ Iniciar Bot
+                    </button>
+                    <button class="btn btn-danger" id="btnStop" onclick="stopBot()" disabled>
+                        ⏹️ Parar Bot
+                    </button>
+                    <button class="btn btn-warning" id="btnRestart" onclick="restartBot()" disabled>
+                        🔄 Reiniciar
+                    </button>
+                </div>
+            </div>
+            
+            <!-- QR Code -->
+            <div class="card">
+                <h2>📱 Conexão WhatsApp</h2>
+                <div class="qrcode-section" id="qrcodeSection">
+                    <p style="margin-bottom: 20px; opacity: 0.7;">
+                        Clique em "Iniciar Bot" para gerar o QR Code
+                    </p>
+                    <img id="qrcode" src="" alt="QR Code" style="display: none;" />
+                </div>
+                <div class="instructions">
+                    <strong>📋 Como conectar:</strong>
+                    <ol>
+                        <li>Clique em "Iniciar Bot"</li>
+                        <li>Aguarde o QR Code aparecer</li>
+                        <li>Abra WhatsApp no celular</li>
+                        <li>Vá em Configurações > Aparelhos conectados</li>
+                        <li>Escaneie o QR Code</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <!-- Configurações do Bot -->
+            <div class="card">
+                <h2>🤖 Configurações do Bot</h2>
+                <form id="configForm">
+                    <div class="form-group">
+                        <label>Nome do Bot</label>
+                        <input type="text" id="botName" value="Assistente Virtual" />
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Nome da Empresa</label>
+                        <input type="text" id="companyName" value="Minha Empresa" />
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Mensagem de Boas-vindas</label>
+                        <textarea id="welcomeMessage">Olá! Sou o assistente virtual da empresa. Como posso ajudá-lo hoje?
+
+Digite uma das opções:
+1 - Como funciona
+2 - Valores dos planos
+3 - Benefícios
+4 - Como aderir
+5 - Outras perguntas</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Link do Site</label>
+                        <input type="url" id="websiteUrl" value="https://site.com" />
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        💾 Salvar Configurações
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Configurações Avançadas -->
+            <div class="card">
+                <h2>⚡ Configurações Avançadas</h2>
+                
+                <div class="setting-row">
+                    <div>
+                        <strong>Auto-resposta</strong>
+                        <p style="font-size: 12px; opacity: 0.7;">Responder automaticamente</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="autoReply" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-row">
+                    <div>
+                        <strong>Mostrar digitando</strong>
+                        <p style="font-size: 12px; opacity: 0.7;">Simular digitação</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="showTyping" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-row">
+                    <div>
+                        <strong>Delay entre mensagens</strong>
+                        <p style="font-size: 12px; opacity: 0.7;">Segundos de espera</p>
+                    </div>
+                    <input type="number" id="messageDelay" value="3" min="1" max="10" 
+                           style="width: 80px; text-align: center;" />
+                </div>
+                
+                <div class="setting-row">
+                    <div>
+                        <strong>Horário de funcionamento</strong>
+                        <p style="font-size: 12px; opacity: 0.7;">Responder apenas neste período</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="businessHours">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-primary" onclick="saveAdvancedSettings()">
+                        💾 Salvar Avançadas
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        let botStarted = false;
+        
+        // Elementos
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const statusDetail = document.getElementById('statusDetail');
+        const btnStart = document.getElementById('btnStart');
+        const btnStop = document.getElementById('btnStop');
+        const btnRestart = document.getElementById('btnRestart');
+        const qrcodeImg = document.getElementById('qrcode');
+        const alertBox = document.getElementById('alertBox');
+        
+        // Carregar configurações salvas
+        loadConfig();
+        
+        // Socket events
+        socket.on('status', (data) => {
+            updateBotStatus(data);
+        });
+        
+        socket.on('qr', (qrCodeImage) => {
+            qrcodeImg.src = qrCodeImage;
+            qrcodeImg.style.display = 'block';
+            updateStatus('waiting', 'Aguardando scan', 'Escaneie o QR Code com WhatsApp');
+        });
+        
+        socket.on('connected', () => {
+            qrcodeImg.style.display = 'none';
+            updateStatus('online', 'Conectado', 'WhatsApp conectado com sucesso!');
+            showAlert('WhatsApp conectado com sucesso!', 'success');
+        });
+        
+        socket.on('disconnected', () => {
+            updateStatus('offline', 'Desconectado', 'WhatsApp foi desconectado');
+            showAlert('WhatsApp desconectado', 'error');
+        });
+        
+        socket.on('bot_started', () => {
+            botStarted = true;
+            btnStart.disabled = true;
+            btnStop.disabled = false;
+            btnRestart.disabled = false;
+            updateStatus('waiting', 'Iniciando...', 'Gerando QR Code...');
+            showAlert('Bot iniciado! Aguarde o QR Code.', 'success');
+        });
+        
+        socket.on('bot_stopped', () => {
+            botStarted = false;
+            btnStart.disabled = false;
+            btnStop.disabled = true;
+            btnRestart.disabled = true;
+            qrcodeImg.style.display = 'none';
+            updateStatus('offline', 'Parado', 'Bot não está em execução');
+            showAlert('Bot parado com sucesso.', 'success');
+        });
+        
+        function updateBotStatus(data) {
+            if (data.connected) {
+                updateStatus('online', 'Conectado', 'WhatsApp ativo');
+                qrcodeImg.style.display = 'none';
+            } else if (data.qrCode) {
+                qrcodeImg.src = data.qrCode;
+                qrcodeImg.style.display = 'block';
+                updateStatus('waiting', 'Aguardando', 'Escaneie o QR Code');
+            }
+            
+            if (data.botStarted) {
+                botStarted = true;
+                btnStart.disabled = true;
+                btnStop.disabled = false;
+                btnRestart.disabled = false;
+            }
+        }
+        
+        function updateStatus(status, text, detail) {
+            statusIndicator.className = 'status-indicator ' + status;
+            statusText.textContent = text;
+            statusDetail.textContent = detail;
+        }
+        
+        function startBot() {
+            socket.emit('start_bot');
+            btnStart.disabled = true;
+            btnStart.textContent = '⏳ Iniciando...';
+        }
+        
+        function stopBot() {
+            if (confirm('Tem certeza que deseja parar o bot?')) {
+                socket.emit('stop_bot');
+            }
+        }
+        
+        function restartBot() {
+            socket.emit('restart_bot');
+            showAlert('Reiniciando bot...', 'success');
+        }
+        
+        function showAlert(message, type) {
+            alertBox.textContent = message;
+            alertBox.className = 'alert ' + type + ' show';
+            setTimeout(() => {
+                alertBox.classList.remove('show');
+            }, 3000);
+        }
+        
+        // Salvar configurações
+        document.getElementById('configForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const config = {
+                botName: document.getElementById('botName').value,
+                companyName: document.getElementById('companyName').value,
+                welcomeMessage: document.getElementById('welcomeMessage').value,
+                websiteUrl: document.getElementById('websiteUrl').value
+            };
+            
+            localStorage.setItem('botConfig', JSON.stringify(config));
+            socket.emit('update_config', config);
+            showAlert('Configurações salvas!', 'success');
+        });
+        
+        function saveAdvancedSettings() {
+            const settings = {
+                autoReply: document.getElementById('autoReply').checked,
+                showTyping: document.getElementById('showTyping').checked,
+                messageDelay: parseInt(document.getElementById('messageDelay').value),
+                businessHours: document.getElementById('businessHours').checked
+            };
+            
+            localStorage.setItem('advancedSettings', JSON.stringify(settings));
+            socket.emit('update_settings', settings);
+            showAlert('Configurações avançadas salvas!', 'success');
+        }
+        
+        function loadConfig() {
+            const config = JSON.parse(localStorage.getItem('botConfig') || '{}');
+            const settings = JSON.parse(localStorage.getItem('advancedSettings') || '{}');
+            
+            if (config.botName) document.getElementById('botName').value = config.botName;
+            if (config.companyName) document.getElementById('companyName').value = config.companyName;
+            if (config.welcomeMessage) document.getElementById('welcomeMessage').value = config.welcomeMessage;
+            if (config.websiteUrl) document.getElementById('websiteUrl').value = config.websiteUrl;
+            
+            if (settings.autoReply !== undefined) document.getElementById('autoReply').checked = settings.autoReply;
+            if (settings.showTyping !== undefined) document.getElementById('showTyping').checked = settings.showTyping;
+            if (settings.messageDelay) document.getElementById('messageDelay').value = settings.messageDelay;
+            if (settings.businessHours !== undefined) document.getElementById('businessHours').checked = settings.businessHours;
+        }
+    </script>
+</body>
+</html>
+
