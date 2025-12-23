@@ -52,7 +52,7 @@ let botSettings = {
 // ROTAS DE PÁGINAS
 // ============================================
 
-// Healthcheck para Railway
+// Healthcheck para Railway (deve responder rapidamente)
 app.get('/health', (req, res) => {
     res.status(200).json({ 
         status: 'ok', 
@@ -60,6 +60,11 @@ app.get('/health', (req, res) => {
         botActive: botStarted,
         connected: isConnected
     });
+});
+
+// Root endpoint simples para verificação
+app.get('/ping', (req, res) => {
+    res.status(200).send('pong');
 });
 
 // Rota principal - redireciona para admin se bot não iniciado
@@ -493,13 +498,17 @@ async function startServer() {
         
         const PORT = process.env.PORT || 3000;
         const HOST = process.env.HOST || '0.0.0.0'; // Railway precisa de 0.0.0.0
+        
+        // Garantir que o servidor escute corretamente
         server.listen(PORT, HOST, () => {
             console.log(`🚀 Servidor rodando em: http://${HOST}:${PORT}`);
+            console.log(`✅ Servidor escutando na porta ${PORT}`);
             console.log('');
             console.log('📍 Páginas disponíveis:');
             console.log(`   ⚙️  Admin:     http://localhost:${PORT}/admin`);
             console.log(`   📱 Dashboard: http://localhost:${PORT}`);
             console.log(`   🔐 Login:     http://localhost:${PORT}/login`);
+            console.log(`   ❤️  Health:    http://localhost:${PORT}/health`);
             console.log('');
             console.log('🔐 Credenciais de acesso:');
             console.log('   Email: admin@chatbot.com');
@@ -510,6 +519,10 @@ async function startServer() {
             console.log('');
             console.log('============================================');
         });
+        
+        // Keep-alive: garantir que o servidor não morra
+        server.keepAliveTimeout = 65000;
+        server.headersTimeout = 66000;
         
         // Tratamento de erros para manter o servidor rodando
         server.on('error', (error) => {
