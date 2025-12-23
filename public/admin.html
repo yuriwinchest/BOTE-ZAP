@@ -481,8 +481,15 @@ Digite uma das opções:
     </div>
     
     <script>
+        // Verificar autenticação
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login';
+        }
+        
         const socket = io();
         let botStarted = false;
+        let authenticated = false;
         
         // Elementos
         const statusIndicator = document.getElementById('statusIndicator');
@@ -494,12 +501,86 @@ Digite uma das opções:
         const qrcodeImg = document.getElementById('qrcode');
         const alertBox = document.getElementById('alertBox');
         
-        // Carregar configurações salvas
-        loadConfig();
+        // Autenticar via Socket.IO
+        socket.on('connect', () => {
+            socket.emit('authenticate', { token: token });
+        });
         
-        // Socket events
+        socket.on('authenticated', (data) => {
+            authenticated = true;
+            console.log('✅ Autenticado:', data.user);
+            // Carregar status do bot do usuário
+            loadBotStatus();
+            loadConfig();
+        });
+        
+        socket.on('auth_error', (data) => {
+            alert('Erro de autenticação: ' + data.message);
+            window.location.href = '/login';
+        });
+        
+        // Carregar status do bot via API
+        async function loadBotStatus() {
+            try {
+                const response = await fetch('/api/bot/status', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    updateBotStatusFromAPI(data);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar status:', error);
+            }
+        }
+        
+        function updateBotStatusFromAPI(data) {
+            if (data.isActive) {
+                botStarted = true;
+                btnStart.disabled = true;
+                btnStop.disabled = false;
+                btnRestart.disabled = false;
+            } else {
+                botStarted = false;
+                btnStart.disabled = false;
+                btnStop.disabled = true;
+                btnRestart.disabled = true;
+            }
+            
+            if (data.isConnected) {
+                updateStatus('online', 'Conectado', 'WhatsApp ativo');
+                qrcodeImg.style.display = 'none';
+            } else if (data.qrCode) {
+                qrcodeImg.src = data.qrCode;
+                qrcodeImg.style.display = 'block';
+                updateStatus('waiting', 'Aguardando', 'Escaneie o QR Code');
+            } else {
+                updateStatus('offline', 'Desconectado', 'Bot não está em execução');
+            }
+            
+            // Carregar configurações
+            if (data.config) {
+                document.getElementById('botName').value = data.config.botName || '';
+                document.getElementById('companyName').value = data.config.companyName || '';
+                document.getElementById('welcomeMessage').value = data.config.welcomeMessage || '';
+                document.getElementById('websiteUrl').value = data.config.websiteUrl || '';
+            }
+            
+            if (data.settings) {
+                document.getElementById('autoReply').checked = data.settings.autoReply !== false;
+                document.getElementById('showTyping').checked = data.settings.showTyping !== false;
+                document.getElementById('messageDelay').value = data.settings.messageDelay || 3;
+                document.getElementById('businessHours').checked = data.settings.operatingHours?.enabled || false;
+            }
+        }
+        
+        // Socket events (Multi-Tenancy - apenas para o usuário logado)
         socket.on('status', (data) => {
-            updateBotStatus(data);
+            if (data.success) {
+                updateBotStatusFromAPI(data);
+            }
         });
         
         socket.on('qr', (qrCodeImage) => {
@@ -508,53 +589,62 @@ Digite uma das opções:
             updateStatus('waiting', 'Aguardando scan', 'Escaneie o QR Code com WhatsApp');
         });
         
-        socket.on('connected', () => {
+        socket.on('connected', (data) => {
             qrcodeImg.style.display = 'none';
             updateStatus('online', 'Conectado', 'WhatsApp conectado com sucesso!');
             showAlert('WhatsApp conectado com sucesso!', 'success');
+            loadBotStatus(); // Atualizar status
         });
         
-        socket.on('disconnected', () => {
+        socket.on('disconnected', (data) => {
             updateStatus('offline', 'Desconectado', 'WhatsApp foi desconectado');
             showAlert('WhatsApp desconectado', 'error');
+            loadBotStatus(); // Atualizar status
         });
         
-        socket.on('bot_started', () => {
-            botStarted = true;
-            btnStart.disabled = true;
-            btnStop.disabled = false;
-            btnRestart.disabled = false;
-            updateStatus('waiting', 'Iniciando...', 'Gerando QR Code...');
-            showAlert('Bot iniciado! Aguarde o QR Code.', 'success');
-        });
-        
-        socket.on('bot_stopped', () => {
-            botStarted = false;
-            btnStart.disabled = false;
-            btnStop.disabled = true;
-            btnRestart.disabled = true;
-            qrcodeImg.style.display = 'none';
-            updateStatus('offline', 'Parado', 'Bot não está em execução');
-            showAlert('Bot parado com sucesso.', 'success');
-        });
-        
-        function updateBotStatus(data) {
-            if (data.connected) {
-                updateStatus('online', 'Conectado', 'WhatsApp ativo');
-                qrcodeImg.style.display = 'none';
-            } else if (data.qrCode) {
-                qrcodeImg.src = data.qrCode;
-                qrcodeImg.style.display = 'block';
-                updateStatus('waiting', 'Aguardando', 'Escaneie o QR Code');
-            }
-            
-            if (data.botStarted) {
+        socket.on('bot_started', (data) => {
+            if (data.success) {
                 botStarted = true;
                 btnStart.disabled = true;
                 btnStop.disabled = false;
                 btnRestart.disabled = false;
+                updateStatus('waiting', 'Iniciando...', 'Gerando QR Code...');
+                showAlert('Bot iniciado! Aguarde o QR Code.', 'success');
+            } else {
+                showAlert(data.message || 'Erro ao iniciar bot', 'error');
+                btnStart.disabled = false;
             }
-        }
+        });
+        
+        socket.on('bot_stopped', (data) => {
+            if (data.success) {
+                botStarted = false;
+                btnStart.disabled = false;
+                btnStop.disabled = true;
+                btnRestart.disabled = true;
+                qrcodeImg.style.display = 'none';
+                updateStatus('offline', 'Parado', 'Bot não está em execução');
+                showAlert('Bot parado com sucesso.', 'success');
+            }
+        });
+        
+        socket.on('error', (data) => {
+            showAlert(data.message || 'Erro', 'error');
+        });
+        
+        socket.on('config_updated', (data) => {
+            if (data.success) {
+                showAlert('Configurações salvas!', 'success');
+            }
+        });
+        
+        socket.on('settings_updated', (data) => {
+            if (data.success) {
+                showAlert('Configurações avançadas salvas!', 'success');
+            }
+        });
+        
+        // Função removida - agora usa updateBotStatusFromAPI
         
         function updateStatus(status, text, detail) {
             statusIndicator.className = 'status-indicator ' + status;
@@ -563,20 +653,54 @@ Digite uma das opções:
         }
         
         function startBot() {
-            socket.emit('start_bot');
+            if (!authenticated) {
+                showAlert('Aguarde autenticação...', 'error');
+                return;
+            }
+            
+            // Obter configurações do formulário
+            const config = {
+                botName: document.getElementById('botName').value,
+                companyName: document.getElementById('companyName').value,
+                welcomeMessage: document.getElementById('welcomeMessage').value,
+                websiteUrl: document.getElementById('websiteUrl').value
+            };
+            
+            const settings = {
+                autoReply: document.getElementById('autoReply').checked,
+                showTyping: document.getElementById('showTyping').checked,
+                messageDelay: parseInt(document.getElementById('messageDelay').value),
+                operatingHours: {
+                    enabled: document.getElementById('businessHours').checked
+                }
+            };
+            
+            socket.emit('start_bot', { config, settings });
             btnStart.disabled = true;
             btnStart.textContent = '⏳ Iniciando...';
         }
         
         function stopBot() {
+            if (!authenticated) {
+                showAlert('Aguarde autenticação...', 'error');
+                return;
+            }
+            
             if (confirm('Tem certeza que deseja parar o bot?')) {
                 socket.emit('stop_bot');
             }
         }
         
         function restartBot() {
-            socket.emit('restart_bot');
-            showAlert('Reiniciando bot...', 'success');
+            if (!authenticated) {
+                showAlert('Aguarde autenticação...', 'error');
+                return;
+            }
+            
+            stopBot();
+            setTimeout(() => {
+                startBot();
+            }, 2000);
         }
         
         function showAlert(message, type) {

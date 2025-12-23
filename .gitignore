@@ -5,6 +5,16 @@ node_modules/
 .env
 .env.local
 .env.production
+.env.*
+*.env
+!.env.example
+
+# Credentials and secrets
+*credentials*
+*secrets*
+*keys*
+*.key
+*.pem
 
 # Logs
 logs

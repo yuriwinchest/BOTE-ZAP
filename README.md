@@ -1,14 +1,18 @@
-# 🤖 BOTE-ZAP - WhatsApp Bot com Painel Administrativo
+# 🤖 BOTE-ZAP - WhatsApp Bot Multi-Tenancy
 
-Bot para WhatsApp com interface web administrativa para configuração e gerenciamento.
+Bot para WhatsApp com sistema multi-tenancy - cada usuário tem seu próprio bot e configurações isoladas.
 
 ## 🚀 Funcionalidades
 
-- ✅ **Painel Administrativo** - Configure o bot antes de iniciar
+- ✅ **Multi-Tenancy** - Cada usuário tem seu próprio bot isolado
+- ✅ **Criação de Contas** - Usuários podem criar suas próprias contas
+- ✅ **Painel Administrativo** - Configure seu bot antes de iniciar
 - ✅ **QR Code no Navegador** - Escaneie diretamente pela web
 - ✅ **Respostas Automáticas** - Menu interativo com opções
 - ✅ **Configurações em Tempo Real** - Altere mensagens sem reiniciar
 - ✅ **Status em Tempo Real** - Acompanhe a conexão via Socket.IO
+- ✅ **Supabase Integrado** - Banco de dados persistente
+- ✅ **Segurança** - Validação, rate limiting, proteção SQL injection
 
 ## 📦 Instalação
 
@@ -41,11 +45,24 @@ Após iniciar, acesse:
 
 ## 📋 Como Usar
 
-1. Acesse `/admin`
-2. Configure o bot (nome, empresa, mensagens)
-3. Clique em **"Iniciar Bot"**
-4. Escaneie o QR Code com WhatsApp
-5. Bot funcionando! 🎉
+### Para Administradores:
+1. Acesse `/login` (admin@chatbot.com / admin123)
+2. Vá para `/admin`
+3. Configure o bot (nome, empresa, mensagens)
+4. Clique em **"Iniciar Bot"**
+5. Escaneie o QR Code com WhatsApp
+6. Bot funcionando! 🎉
+
+### Para Novos Usuários:
+1. Acesse `/register`
+2. Crie sua conta
+3. Faça login
+4. Configure SEU bot
+5. Inicie SEU bot
+6. Escaneie SEU QR Code
+7. Seu bot funcionando! 🎉
+
+**Cada usuário tem seu próprio bot isolado!**
 
 ## ⚙️ Configurações
 
@@ -68,6 +85,9 @@ Após iniciar, acesse:
 - **Socket.IO** - Comunicação em tempo real
 - **whatsapp-web.js** - API WhatsApp
 - **JWT** - Autenticação
+- **Supabase** - Banco de dados PostgreSQL
+- **bcryptjs** - Hash de senhas
+- **Multi-Tenancy** - Isolamento por usuário
 
 ## 📁 Estrutura
 
@@ -84,13 +104,27 @@ BOTE-ZAP/
     └── simple-auth.js  # Serviço de autenticação
 ```
 
-## 🚀 Deploy
+## 🚀 Deploy no Railway
 
-### Vercel (Recomendado para Frontend)
-O backend precisa de um servidor que suporte WebSockets e Puppeteer.
+### Passo 1: Executar SQL no Supabase
+1. Acesse: https://supabase.com/dashboard/project/pxyekqpcgjwaztummzvh/sql
+2. Execute: `bot/database/schema-multitenancy.sql`
 
-### Railway / Render / Heroku
-Plataformas recomendadas para o backend completo.
+### Passo 2: Configurar Variáveis no Railway
+No Railway, Settings > Variables, adicione:
+```
+SUPABASE_URL=https://pxyekqpcgjwaztummzvh.supabase.co
+SUPABASE_ANON_KEY=sua-chave-anon
+JWT_SECRET=sua-chave-secreta-forte
+```
+
+### Passo 3: Gerar URL Pública
+Railway > Settings > Networking > Generate Domain
+
+### Passo 4: Testar
+Acesse a URL gerada e faça login!
+
+**📖 Guia completo:** Veja `GUIA_DEPLOY_RAILWAY.md`
 
 ## 📝 Licença
 

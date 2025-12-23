@@ -7,8 +7,10 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const qrcode = require('qrcode');
-const { Client } = require('whatsapp-web.js');
-const AuthService = require('./services/simple-auth');
+// Auto-detecta Supabase ou usa banco em memória
+const AuthService = require('./services/auth');
+const BotManager = require('./services/bot-manager');
+const { requireAuth } = require('./middleware/auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -22,31 +24,24 @@ const io = socketIo(server, {
 // Servir arquivos estáticos
 app.use(express.static('public'));
 
+// Middleware de segurança
+const security = require('./middleware/security');
+app.use(security.sanitizeHeaders);
+app.use(security.validateContentType);
+app.use(security.limitBodySize(1024 * 1024)); // 1MB max
+
+// Rate limiting para APIs sensíveis
+app.use('/api/login', security.rateLimiter(5, 60000)); // 5 tentativas por minuto
+app.use('/api/register', security.rateLimiter(3, 60000)); // 3 registros por minuto
+
 // Middleware para parsing JSON
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // ============================================
-// VARIÁVEIS DE ESTADO DO BOT
+// MULTI-TENANCY: Cada usuário tem seu próprio bot
 // ============================================
-let client = null;
-let qrCodeData = null;
-let isConnected = false;
-let botStarted = false;
-
-// Configurações do bot (podem ser alteradas via admin)
-let botConfig = {
-    botName: 'Assistente Virtual',
-    companyName: 'Minha Empresa',
-    welcomeMessage: 'Olá! Sou o assistente virtual. Como posso ajudá-lo?',
-    websiteUrl: 'https://site.com'
-};
-
-let botSettings = {
-    autoReply: true,
-    showTyping: true,
-    messageDelay: 3,
-    businessHours: false
-};
+// O BotManager gerencia múltiplos bots simultaneamente
+// Cada usuário só acessa seu próprio bot
 
 // ============================================
 // ROTAS DE PÁGINAS
@@ -56,9 +51,7 @@ let botSettings = {
 app.get('/health', (req, res) => {
     res.status(200).json({ 
         status: 'ok', 
-        timestamp: new Date().toISOString(),
-        botActive: botStarted,
-        connected: isConnected
+        timestamp: new Date().toISOString()
     });
 });
 
@@ -204,279 +197,173 @@ app.get('/api/me', async (req, res) => {
 });
 
 // ============================================
-// APIs DO BOT
+// APIs DO BOT (Multi-Tenancy)
 // ============================================
 
-app.get('/api/bot/status', (req, res) => {
+// Status do bot do usuário logado
+app.get('/api/bot/status', requireAuth, (req, res) => {
+    const userId = req.user.id;
+    const status = BotManager.getBotStatus(userId);
+    
     res.json({
-        started: botStarted,
-        connected: isConnected,
-        config: botConfig,
-        settings: botSettings
+        success: true,
+        ...status
     });
 });
 
-app.post('/api/bot/config', (req, res) => {
-    botConfig = { ...botConfig, ...req.body };
-    res.json({ success: true, config: botConfig });
+// Iniciar bot do usuário logado
+app.post('/api/bot/start', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { config, settings } = req.body;
+        
+        const result = await BotManager.initializeBot(userId, config, settings);
+        
+        if (result.success) {
+            res.json({
+                success: true,
+                message: result.message
+            });
+        } else {
+            res.status(400).json({
+                success: false,
+                message: result.message
+            });
+        }
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao iniciar bot'
+        });
+    }
 });
 
-app.post('/api/bot/settings', (req, res) => {
-    botSettings = { ...botSettings, ...req.body };
-    res.json({ success: true, settings: botSettings });
+// Parar bot do usuário logado
+app.post('/api/bot/stop', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const result = await BotManager.stopBot(userId);
+        
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao parar bot'
+        });
+    }
+});
+
+// Atualizar configurações do bot
+app.post('/api/bot/config', requireAuth, (req, res) => {
+    const userId = req.user.id;
+    const result = BotManager.updateBotConfig(userId, req.body);
+    res.json(result);
+});
+
+// Atualizar settings do bot
+app.post('/api/bot/settings', requireAuth, (req, res) => {
+    const userId = req.user.id;
+    const result = BotManager.updateBotSettings(userId, req.body);
+    res.json(result);
 });
 
 // ============================================
-// FUNÇÕES DO WHATSAPP
+// FUNÇÕES DO WHATSAPP (Removidas - agora usa BotManager)
 // ============================================
-
-function initializeWhatsApp() {
-    if (client) {
-        console.log('⚠️ Cliente WhatsApp já existe');
-        return;
-    }
-    
-    console.log('🔄 Inicializando cliente WhatsApp...');
-    
-    client = new Client({
-        puppeteer: {
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        }
-    });
-    
-    // Evento quando QR Code é gerado
-    client.on('qr', async (qr) => {
-        console.log('📱 QR Code gerado!');
-        try {
-            const qrCodeImage = await qrcode.toDataURL(qr);
-            qrCodeData = qrCodeImage;
-            io.emit('qr', qrCodeImage);
-            require('qrcode-terminal').generate(qr, {small: true});
-        } catch (err) {
-            console.error('❌ Erro ao gerar QR Code:', err);
-        }
-    });
-    
-    // Evento quando conectado
-    client.on('ready', () => {
-        console.log('✅ WhatsApp conectado com sucesso!');
-        isConnected = true;
-        qrCodeData = null;
-        io.emit('connected', { message: 'WhatsApp conectado com sucesso!' });
-    });
-    
-    // Evento quando desconectado
-    client.on('disconnected', (reason) => {
-        console.log('❌ WhatsApp desconectado:', reason);
-        isConnected = false;
-        qrCodeData = null;
-        io.emit('disconnected', { message: 'WhatsApp desconectado', reason });
-    });
-    
-    // Evento de autenticação falha
-    client.on('auth_failure', (msg) => {
-        console.error('❌ Falha na autenticação:', msg);
-        io.emit('auth_failure', { message: 'Falha na autenticação' });
-    });
-    
-    // Lógica do chatbot
-    client.on('message', handleMessage);
-    
-    // Inicializar
-    client.initialize();
-    botStarted = true;
-    io.emit('bot_started');
-}
-
-async function destroyWhatsApp() {
-    if (client) {
-        console.log('🔄 Parando cliente WhatsApp...');
-        try {
-            await client.destroy();
-        } catch (err) {
-            console.error('Erro ao destruir cliente:', err);
-        }
-        client = null;
-        isConnected = false;
-        qrCodeData = null;
-        botStarted = false;
-        io.emit('bot_stopped');
-        console.log('✅ Cliente WhatsApp parado');
-    }
-}
-
-// Função de delay
-const delay = ms => new Promise(res => setTimeout(res, ms));
-
-// Handler de mensagens
-async function handleMessage(msg) {
-    if (!botSettings.autoReply) return;
-    if (!msg.from.endsWith('@c.us')) return;
-    
-    const delayTime = (botSettings.messageDelay || 3) * 1000;
-    
-    // Menu principal
-    if (msg.body.match(/(menu|Menu|dia|tarde|noite|oi|Oi|Olá|olá|ola|Ola)/i)) {
-        const chat = await msg.getChat();
-        
-        if (botSettings.showTyping) {
-            await delay(delayTime);
-            await chat.sendStateTyping();
-            await delay(delayTime);
-        }
-        
-        const contact = await msg.getContact();
-        const name = contact.pushname || 'Cliente';
-        
-        const welcomeMsg = `Olá! ${name.split(" ")[0]} Sou o ${botConfig.botName} da ${botConfig.companyName}. Como posso ajudá-lo hoje? Por favor, digite uma das opções abaixo:
-
-1 - Como funciona
-2 - Valores dos planos
-3 - Benefícios
-4 - Como aderir
-5 - Outras perguntas`;
-        
-        await client.sendMessage(msg.from, welcomeMsg);
-    }
-
-    // Opção 1
-    if (msg.body === '1') {
-        const chat = await msg.getChat();
-        if (botSettings.showTyping) {
-            await delay(delayTime);
-            await chat.sendStateTyping();
-            await delay(delayTime);
-        }
-        await client.sendMessage(msg.from, `Nosso serviço oferece consultas médicas 24 horas por dia, 7 dias por semana, diretamente pelo WhatsApp.
-
-Não há carência, o que significa que você pode começar a usar nossos serviços imediatamente após a adesão.
-
-Oferecemos atendimento médico ilimitado, receitas e muito mais!`);
-        
-        await delay(delayTime);
-        await client.sendMessage(msg.from, `Link para cadastro: ${botConfig.websiteUrl}`);
-    }
-
-    // Opção 2
-    if (msg.body === '2') {
-        const chat = await msg.getChat();
-        if (botSettings.showTyping) {
-            await delay(delayTime);
-            await chat.sendStateTyping();
-            await delay(delayTime);
-        }
-        await client.sendMessage(msg.from, `*Plano Individual:* R$22,50 por mês.
-
-*Plano Família:* R$39,90 por mês, inclui você mais 3 dependentes.
-
-*Plano TOP Individual:* R$42,50 por mês, com benefícios adicionais.
-
-*Plano TOP Família:* R$79,90 por mês, inclui você mais 3 dependentes.`);
-        
-        await delay(delayTime);
-        await client.sendMessage(msg.from, `Link para cadastro: ${botConfig.websiteUrl}`);
-    }
-
-    // Opção 3
-    if (msg.body === '3') {
-        const chat = await msg.getChat();
-        if (botSettings.showTyping) {
-            await delay(delayTime);
-            await chat.sendStateTyping();
-            await delay(delayTime);
-        }
-        await client.sendMessage(msg.from, `✨ *Benefícios:*
-
-• Sorteio de prêmios todo ano
-• Atendimento médico ilimitado 24h por dia
-• Receitas de medicamentos
-• Acesso a cursos gratuitos
-• E muito mais!`);
-        
-        await delay(delayTime);
-        await client.sendMessage(msg.from, `Link para cadastro: ${botConfig.websiteUrl}`);
-    }
-
-    // Opção 4
-    if (msg.body === '4') {
-        const chat = await msg.getChat();
-        if (botSettings.showTyping) {
-            await delay(delayTime);
-            await chat.sendStateTyping();
-            await delay(delayTime);
-        }
-        await client.sendMessage(msg.from, `Você pode aderir aos nossos planos diretamente pelo nosso site ou pelo WhatsApp.
-
-Após a adesão, você terá acesso imediato a todos os benefícios!`);
-        
-        await delay(delayTime);
-        await client.sendMessage(msg.from, `Link para cadastro: ${botConfig.websiteUrl}`);
-    }
-
-    // Opção 5
-    if (msg.body === '5') {
-        const chat = await msg.getChat();
-        if (botSettings.showTyping) {
-            await delay(delayTime);
-            await chat.sendStateTyping();
-            await delay(delayTime);
-        }
-        await client.sendMessage(msg.from, `Se você tiver outras dúvidas ou precisar de mais informações, por favor, fale aqui nesse WhatsApp ou visite nosso site: ${botConfig.websiteUrl}`);
-    }
-}
+// As funções agora estão no BotManager para suportar multi-tenancy
+// Cada usuário tem seu próprio bot isolado
 
 // ============================================
-// SOCKET.IO - COMUNICAÇÃO EM TEMPO REAL
+// SOCKET.IO - COMUNICAÇÃO EM TEMPO REAL (Multi-Tenancy)
 // ============================================
 
-io.on('connection', (socket) => {
+// Configurar BotManager com Socket.IO
+BotManager.setSocketIO(io);
+
+io.on('connection', async (socket) => {
     console.log('👤 Cliente conectado ao servidor web');
     
-    // Enviar status atual
-    socket.emit('status', { 
-        connected: isConnected,
-        qrCode: qrCodeData,
-        botStarted: botStarted,
-        config: botConfig,
-        settings: botSettings
+    // Autenticar usuário via token
+    socket.on('authenticate', async (data) => {
+        try {
+            const { token } = data;
+            if (!token) {
+                socket.emit('auth_error', { message: 'Token não fornecido' });
+                return;
+            }
+            
+            const result = await AuthService.verifyToken(token);
+            if (!result.success) {
+                socket.emit('auth_error', { message: 'Token inválido' });
+                return;
+            }
+            
+            // Associar socket ao usuário
+            const userId = result.user.id;
+            socket.userId = userId;
+            socket.join(`user_${userId}`);
+            
+            // Enviar status do bot do usuário
+            const status = BotManager.getBotStatus(userId);
+            socket.emit('status', {
+                success: true,
+                ...status
+            });
+            
+            socket.emit('authenticated', { user: result.user });
+        } catch (error) {
+            socket.emit('auth_error', { message: 'Erro na autenticação' });
+        }
     });
     
-    // Iniciar bot
-    socket.on('start_bot', () => {
-        console.log('▶️ Comando: Iniciar bot');
-        if (!botStarted) {
-            initializeWhatsApp();
+    // Iniciar bot (apenas se autenticado)
+    socket.on('start_bot', async (data) => {
+        if (!socket.userId) {
+            socket.emit('error', { message: 'Não autenticado' });
+            return;
         }
+        
+        const userId = socket.userId;
+        const { config, settings } = data || {};
+        
+        const result = await BotManager.initializeBot(userId, config, settings);
+        socket.emit('bot_started', result);
     });
     
     // Parar bot
     socket.on('stop_bot', async () => {
-        console.log('⏹️ Comando: Parar bot');
-        await destroyWhatsApp();
-    });
-    
-    // Reiniciar bot
-    socket.on('restart_bot', async () => {
-        console.log('🔄 Comando: Reiniciar bot');
-        await destroyWhatsApp();
-        setTimeout(() => {
-            initializeWhatsApp();
-        }, 2000);
+        if (!socket.userId) {
+            socket.emit('error', { message: 'Não autenticado' });
+            return;
+        }
+        
+        const userId = socket.userId;
+        const result = await BotManager.stopBot(userId);
+        socket.emit('bot_stopped', result);
     });
     
     // Atualizar configurações
     socket.on('update_config', (config) => {
-        console.log('⚙️ Atualizando configurações:', config);
-        botConfig = { ...botConfig, ...config };
-        io.emit('config_updated', botConfig);
+        if (!socket.userId) {
+            socket.emit('error', { message: 'Não autenticado' });
+            return;
+        }
+        
+        const userId = socket.userId;
+        const result = BotManager.updateBotConfig(userId, config);
+        socket.emit('config_updated', result);
     });
     
     // Atualizar settings
     socket.on('update_settings', (settings) => {
-        console.log('⚙️ Atualizando settings:', settings);
-        botSettings = { ...botSettings, ...settings };
-        io.emit('settings_updated', botSettings);
+        if (!socket.userId) {
+            socket.emit('error', { message: 'Não autenticado' });
+            return;
+        }
+        
+        const userId = socket.userId;
+        const result = BotManager.updateBotSettings(userId, settings);
+        socket.emit('settings_updated', result);
     });
     
     socket.on('disconnect', () => {
