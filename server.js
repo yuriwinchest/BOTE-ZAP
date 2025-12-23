@@ -1,3 +1,7 @@
+// Configurar variáveis de ambiente para Puppeteer (whatsapp-web.js)
+process.env.PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = 'true';
+process.env.PUPPETEER_EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
+
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -47,6 +51,16 @@ let botSettings = {
 // ============================================
 // ROTAS DE PÁGINAS
 // ============================================
+
+// Healthcheck para Railway
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        botActive: botStarted,
+        connected: isConnected
+    });
+});
 
 // Rota principal - redireciona para admin se bot não iniciado
 app.get('/', (req, res) => {
@@ -496,9 +510,36 @@ async function startServer() {
             console.log('');
             console.log('============================================');
         });
+        
+        // Tratamento de erros para manter o servidor rodando
+        server.on('error', (error) => {
+            console.error('❌ Erro no servidor:', error);
+        });
+        
     } catch (error) {
         console.error('❌ Erro ao inicializar servidor:', error);
+        process.exit(1);
     }
 }
+
+// Tratamento global de erros não capturados
+process.on('uncaughtException', (error) => {
+    console.error('❌ Erro não capturado:', error);
+    // Não encerra o processo, apenas loga o erro
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Promise rejeitada não tratada:', reason);
+    // Não encerra o processo, apenas loga o erro
+});
+
+// Manter o processo vivo
+process.on('SIGTERM', () => {
+    console.log('⚠️ SIGTERM recebido, encerrando graciosamente...');
+    server.close(() => {
+        console.log('✅ Servidor encerrado');
+        process.exit(0);
+    });
+});
 
 startServer();
