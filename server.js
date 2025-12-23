@@ -8,7 +8,12 @@ const AuthService = require('./services/simple-auth');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+    cors: {
+        origin: "*", // Permite todas as origens (ajuste em produção)
+        methods: ["GET", "POST"]
+    }
+});
 
 // Servir arquivos estáticos
 app.use(express.static('public'));
@@ -473,8 +478,9 @@ async function startServer() {
         console.log('');
         
         const PORT = process.env.PORT || 3000;
-        server.listen(PORT, () => {
-            console.log(`🚀 Servidor rodando em: http://localhost:${PORT}`);
+        const HOST = process.env.HOST || '0.0.0.0'; // Railway precisa de 0.0.0.0
+        server.listen(PORT, HOST, () => {
+            console.log(`🚀 Servidor rodando em: http://${HOST}:${PORT}`);
             console.log('');
             console.log('📍 Páginas disponíveis:');
             console.log(`   ⚙️  Admin:     http://localhost:${PORT}/admin`);
